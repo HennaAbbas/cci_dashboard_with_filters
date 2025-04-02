@@ -44,6 +44,17 @@
       const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
       const [activeDateRange, setActiveDateRange] = useState({ startDate: '', endDate: '' });
 
+      // Define the specific filter columns we want to show
+      const filterColumns = [
+        'ORGANIZATION_NAME', 
+        'PROJECT_NAME', 
+        'VCS_NAME', 
+        'VCS_BRANCH', 
+        'JOB_BUILD_STATUS', 
+        'EXECUTOR'
+        // JOB_RUN_STARTED_AT is handled separately as a range
+      ];
+
       // Calculate statistics from the data
       const calculateStats = (data) => {
         const stats = {
@@ -96,15 +107,38 @@
               
               setData(cleanData);
               
-              // Set visible columns (first 10 columns by default)
-              setVisibleColumns(results.meta.fields.slice(0, 10));
+              // Set visible columns (prioritize the filter columns if they exist)
+              let initialColumns = [];
+              filterColumns.forEach(col => {
+                if (results.meta.fields.includes(col)) {
+                  initialColumns.push(col);
+                }
+              });
               
-              // Generate filter options for each column
+              // Add JOB_RUN_STARTED_AT if it exists
+              if (results.meta.fields.includes('JOB_RUN_STARTED_AT') && !initialColumns.includes('JOB_RUN_STARTED_AT')) {
+                initialColumns.push('JOB_RUN_STARTED_AT');
+              }
+              
+              // If we don't have enough columns, add more from the available fields
+              if (initialColumns.length < 10) {
+                results.meta.fields.forEach(field => {
+                  if (!initialColumns.includes(field) && initialColumns.length < 10) {
+                    initialColumns.push(field);
+                  }
+                });
+              }
+              
+              setVisibleColumns(initialColumns);
+              
+              // Generate filter options for the specified columns
               const options = {};
-              results.meta.fields.forEach(field => {
-                // Get unique values for this column
-                const uniqueValues = [...new Set(cleanData.map(item => item[field]))].filter(x => x !== null);
-                options[field] = uniqueValues.sort();
+              filterColumns.forEach(field => {
+                if (results.meta.fields.includes(field)) {
+                  // Get unique values for this column
+                  const uniqueValues = [...new Set(cleanData.map(item => item[field]))].filter(x => x !== null);
+                  options[field] = uniqueValues.sort();
+                }
               });
               setColumnOptions(options);
               
@@ -245,7 +279,7 @@
       const handleFilterChange = (field, value) => {
         setFilters({
           ...filters,
-          [field]: value
+          [field]: value ? [value] : []
         });
       };
 
@@ -442,114 +476,61 @@
             </div>
           )}
           
-          {/* Search and Controls */}
-          <div className="flex flex-col md:flex-row gap-4 items-center">
-            <div className="flex-1">
-              <input
-                type="text"
-                placeholder="Search all columns..."
-                className="w-full p-2 border rounded"
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-            </div>
-            
-            <div className="flex gap-2">
-              <select 
-                className="p-2 border rounded"
-                value={rowsPerPage}
-                onChange={(e) => {
-                  setRowsPerPage(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-              >
-                <option value={10}>10 rows</option>
-                <option value={20}>20 rows</option>
-                <option value={50}>50 rows</option>
-                <option value={100}>100 rows</option>
-              </select>
-              
-              <div className="relative">
-                <button 
-                  className="p-2 border rounded bg-white"
-                  onClick={() => document.getElementById('column-selector').classList.toggle('hidden')}
-                >
-                  Columns
-                </button>
-                <div 
-                  id="column-selector" 
-                  className="absolute right-0 mt-1 w-64 bg-white border rounded shadow-lg p-2 z-10 hidden max-h-96 overflow-y-auto"
-                >
-                  {data.length > 0 && Object.keys(data[0]).map(column => (
-                    <div key={column} className="flex items-center p-1">
-                      <input
-                        type="checkbox"
-                        id={`col-${column}`}
-                        checked={visibleColumns.includes(column)}
-                        onChange={() => toggleColumnVisibility(column)}
-                        className="mr-2"
-                      />
-                      <label htmlFor={`col-${column}`} className="text-sm">{column}</label>
-                    </div>
-                  ))}
+          {/* Filter Panel */}
+          <div className="bg-gray-100 p-4 rounded shadow">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {/* Date Range Filter for JOB_RUN_STARTED_AT */}
+              <div className="bg-white p-3 rounded border">
+                <h3 className="text-sm font-medium mb-2">JOB_RUN_STARTED_AT Range</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">From Date</label>
+                    <input 
+                      type="date" 
+                      className="w-full p-2 border rounded text-sm"
+                      value={dateRange.startDate}
+                      min={dateBoundaries.min}
+                      max={dateRange.endDate || dateBoundaries.max}
+                      onChange={(e) => setDateRange({...dateRange, startDate: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">To Date</label>
+                    <input 
+                      type="date" 
+                      className="w-full p-2 border rounded text-sm"
+                      value={dateRange.endDate}
+                      min={dateRange.startDate || dateBoundaries.min}
+                      max={dateBoundaries.max}
+                      onChange={(e) => setDateRange({...dateRange, endDate: e.target.value})}
+                    />
+                  </div>
                 </div>
               </div>
               
-              <button 
-                className="p-2 border rounded bg-blue-500 text-white"
-                onClick={() => document.getElementById('filter-panel').classList.toggle('hidden')}
-              >
-                Filters
-              </button>
-            </div>
-          </div>
-          
-          {/* Filter Panel */}
-          <div id="filter-panel" className="bg-gray-100 p-4 rounded shadow hidden">
-            {/* Date Range Filter for JOB_RUN_STARTED_AT */}
-            <div className="border-b pb-4 mb-4">
-              <h3 className="text-lg font-medium mb-2">Job Start Date Range</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">From Date</label>
-                  <input 
-                    type="date" 
-                    className="w-full p-2 border rounded"
-                    value={dateRange.startDate}
-                    min={dateBoundaries.min}
-                    max={dateRange.endDate || dateBoundaries.max}
-                    onChange={(e) => setDateRange({...dateRange, startDate: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">To Date</label>
-                  <input 
-                    type="date" 
-                    className="w-full p-2 border rounded"
-                    value={dateRange.endDate}
-                    min={dateRange.startDate || dateBoundaries.min}
-                    max={dateBoundaries.max}
-                    onChange={(e) => setDateRange({...dateRange, endDate: e.target.value})}
-                  />
-                </div>
+              {/* Search Field */}
+              <div className="bg-white p-3 rounded border">
+                <h3 className="text-sm font-medium mb-2">Search</h3>
+                <input
+                  type="text"
+                  placeholder="Search all columns..."
+                  className="w-full p-2 border rounded text-sm"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
               </div>
             </div>
             
             {/* Column Filters */}
-            <h3 className="text-lg font-medium mb-2">Column Filters</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              {Object.keys(columnOptions)
-                .filter(column => ['ORGANIZATION_NAME', 'PROJECT_NAME', 'VCS_NAME', 'VCS_BRANCH', 'JOB_BUILD_STATUS', 'OPERATING_SYSTEM', 'EXECUTOR'].includes(column))
-                .map(column => (
-                  <div key={column} className="flex flex-col">
-                    <label className="text-sm font-medium mb-1">{column}</label>
+              {filterColumns.map(column => (
+                columnOptions[column] && (
+                  <div key={column} className="bg-white p-3 rounded border">
+                    <label className="block text-sm font-medium mb-2">{column}</label>
                     <select
-                      className="w-full p-2 border rounded"
-                      value={filters[column] || ''}
-                      onChange={(e) => handleFilterChange(column, e.target.value ? [e.target.value] : [])}
+                      className="w-full p-2 border rounded text-sm"
+                      value={filters[column]?.[0] || ''}
+                      onChange={(e) => handleFilterChange(column, e.target.value)}
                     >
                       <option value="">All</option>
                       {columnOptions[column].map(option => (
@@ -559,22 +540,60 @@
                       ))}
                     </select>
                   </div>
-                ))
-              }
+                )
+              ))}
             </div>
-            <div className="flex justify-end gap-2">
-              <button 
-                className="p-2 border rounded bg-gray-300"
-                onClick={resetFilters}
-              >
-                Reset
-              </button>
-              <button 
-                className="p-2 border rounded bg-blue-500 text-white"
-                onClick={applyFilters}
-              >
-                Apply Filters
-              </button>
+            
+            <div className="flex justify-between">
+              <div className="flex items-center">
+                <select 
+                  className="p-2 border rounded mr-2"
+                  value={rowsPerPage}
+                  onChange={(e) => {
+                    setRowsPerPage(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                >
+                  <option value={10}>10 rows</option>
+                  <option value={20}>20 rows</option>
+                  <option value={50}>50 rows</option>
+                  <option value={100}>100 rows</option>
+                </select>
+                <span className="text-sm text-gray-500">rows per page</span>
+              </div>
+              
+              <div className="flex gap-2">
+                <button 
+                  className="p-2 border rounded bg-gray-300"
+                  onClick={resetFilters}
+                >
+                  Reset Filters
+                </button>
+                <button 
+                  className="p-2 border rounded bg-blue-500 text-white"
+                  onClick={applyFilters}
+                >
+                  Apply Filters
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Column Selector */}
+          <div className="bg-white p-4 rounded shadow">
+            <h3 className="font-medium mb-2">Visible Columns</h3>
+            <div className="flex flex-wrap gap-2">
+              {data.length > 0 && Object.keys(data[0]).map(column => (
+                <label key={column} className="inline-flex items-center p-1 border rounded">
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.includes(column)}
+                    onChange={() => toggleColumnVisibility(column)}
+                    className="mr-1"
+                  />
+                  <span className="text-sm">{column}</span>
+                </label>
+              ))}
             </div>
           </div>
           
