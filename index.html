@@ -8,339 +8,246 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- PapaParse for CSV parsing -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-  <!-- React and ReactDOM -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <!-- Babel for JSX -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.21.4/babel.min.js"></script>
   <!-- Lodash for data manipulation -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+  <style>
+    /* Custom styles */
+    .debug-info {
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+  </style>
 </head>
-<body class="bg-gray-50">
-  <div class="container mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-6">CircleCI Build Data Dashboard</h1>
-    <div id="app"></div>
+<body class="bg-gray-100 p-4">
+  <div class="max-w-6xl mx-auto">
+    <h1 class="text-2xl font-bold mb-4">CircleCI Build Data Dashboard</h1>
+    
+    <!-- File Upload -->
+    <div class="bg-white p-4 rounded shadow mb-6">
+      <h2 class="text-lg font-medium mb-2">Upload CSV Data</h2>
+      <input type="file" id="csvFile" accept=".csv" class="block w-full mb-2">
+      <div id="uploadStatus" class="text-sm text-gray-600"></div>
+      
+      <!-- Debug Info -->
+      <div id="debugSection" class="mt-4 hidden">
+        <h3 class="text-md font-medium mb-2">Debug Information:</h3>
+        <div class="bg-gray-100 p-2 rounded debug-info" id="debugInfo"></div>
+      </div>
+    </div>
+    
+    <!-- Filters -->
+    <div class="bg-white p-4 rounded shadow mb-6" id="filterSection" style="display: none;">
+      <h2 class="text-lg font-medium mb-2">Filters</h2>
+      
+      <!-- Date Range Filter -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 p-3 border rounded">
+        <div>
+          <label class="block text-sm font-medium mb-1">JOB_RUN_STARTED_AT From:</label>
+          <input type="date" id="startDate" class="w-full p-2 border rounded">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">JOB_RUN_STARTED_AT To:</label>
+          <input type="date" id="endDate" class="w-full p-2 border rounded">
+        </div>
+      </div>
+      
+      <!-- Column Filters -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4" id="filterControls"></div>
+      
+      <div class="mt-4 flex justify-end space-x-2">
+        <button id="resetFilterBtn" class="px-3 py-1 bg-gray-200 rounded">Reset</button>
+        <button id="applyFilterBtn" class="px-3 py-1 bg-blue-500 text-white rounded">Apply Filters</button>
+      </div>
+    </div>
+    
+    <!-- Active Filters -->
+    <div class="bg-white p-4 rounded shadow mb-6 hidden" id="activeFiltersSection">
+      <h2 class="text-lg font-medium mb-2">Active Filters</h2>
+      <div id="activeFilters" class="flex flex-wrap gap-2"></div>
+    </div>
+    
+    <!-- Column Selector -->
+    <div class="bg-white p-4 rounded shadow mb-6 hidden" id="columnSelectorSection">
+      <h2 class="text-lg font-medium mb-2">Visible Columns</h2>
+      <div id="columnSelector" class="flex flex-wrap gap-2"></div>
+    </div>
+    
+    <!-- Table -->
+    <div class="bg-white rounded shadow overflow-hidden hidden" id="tableContainer">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200" id="dataTable">
+          <thead class="bg-gray-50">
+            <tr id="tableHeader"></tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200" id="tableBody"></tbody>
+        </table>
+      </div>
+      <div class="p-2 flex justify-between items-center bg-gray-50">
+        <div id="pagination" class="text-sm text-gray-600"></div>
+        <div class="flex space-x-2">
+          <button id="prevPage" class="px-2 py-1 bg-gray-200 rounded disabled:opacity-50" disabled>Previous</button>
+          <span id="pageInfo" class="px-2 py-1">Page 1</span>
+          <button id="nextPage" class="px-2 py-1 bg-gray-200 rounded disabled:opacity-50" disabled>Next</button>
+        </div>
+      </div>
+    </div>
   </div>
-  
-  <!-- Your React component (written in JSX, will be transformed by Babel) -->
-  <script type="text/babel">
-    const { useState, useEffect, useMemo } = React;
 
-    // Main Dashboard Component
-    const CircleCIDataDashboard = () => {
-      const [data, setData] = useState([]);
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState(null);
-      const [filters, setFilters] = useState({});
-      const [activeFilters, setActiveFilters] = useState({});
-      const [currentPage, setCurrentPage] = useState(1);
-      const [rowsPerPage, setRowsPerPage] = useState(10);
-      const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-      const [columnOptions, setColumnOptions] = useState({});
-      const [visibleColumns, setVisibleColumns] = useState([]);
-      const [searchTerm, setSearchTerm] = useState('');
-      const [stats, setStats] = useState({});
-      const [dataLoaded, setDataLoaded] = useState(false);
-      const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
-      const [activeDateRange, setActiveDateRange] = useState({ startDate: '', endDate: '' });
-
-      // Define the specific filter columns we want to show
-      const filterColumns = [
-        'ORGANIZATION_NAME', 
-        'PROJECT_NAME', 
-        'VCS_NAME', 
-        'VCS_BRANCH', 
-        'JOB_BUILD_STATUS', 
-        'EXECUTOR'
-        // JOB_RUN_STARTED_AT is handled separately as a range
-      ];
-
-      // Calculate statistics from the data
-      const calculateStats = (data) => {
-        const stats = {
-          totalJobs: data.length,
-          successfulJobs: data.filter(job => job.JOB_BUILD_STATUS === 'success').length,
-          failedJobs: data.filter(job => job.JOB_BUILD_STATUS === 'failed').length,
-          totalCredits: _.sumBy(data, 'TOTAL_CREDITS'),
-          averageJobRuntime: _.meanBy(
-            data.filter(job => job.JOB_RUN_SECONDS && job.JOB_RUN_SECONDS !== null), 
-            'JOB_RUN_SECONDS'
-          )
-        };
+  <script>
+    // DOM Elements
+    const csvFileInput = document.getElementById('csvFile');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const debugSection = document.getElementById('debugSection');
+    const debugInfo = document.getElementById('debugInfo');
+    const filterSection = document.getElementById('filterSection');
+    const filterControls = document.getElementById('filterControls');
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+    const tableContainer = document.getElementById('tableContainer');
+    const tableHeader = document.getElementById('tableHeader');
+    const tableBody = document.getElementById('tableBody');
+    const resetFilterBtn = document.getElementById('resetFilterBtn');
+    const applyFilterBtn = document.getElementById('applyFilterBtn');
+    const prevPageBtn = document.getElementById('prevPage');
+    const nextPageBtn = document.getElementById('nextPage');
+    const pageInfo = document.getElementById('pageInfo');
+    const pagination = document.getElementById('pagination');
+    const activeFiltersSection = document.getElementById('activeFiltersSection');
+    const activeFilters = document.getElementById('activeFilters');
+    const columnSelectorSection = document.getElementById('columnSelectorSection');
+    const columnSelector = document.getElementById('columnSelector');
+    
+    // State variables
+    let data = [];
+    let filteredData = [];
+    let columns = [];
+    let currentPage = 1;
+    let rowsPerPage = 20;
+    let filters = {};
+    let dateRange = { startDate: '', endDate: '' };
+    let visibleColumns = [];
+    
+    // Filter columns we care about
+    const filterColumns = [
+      'ORGANIZATION_NAME',
+      'PROJECT_NAME',
+      'VCS_NAME',
+      'VCS_BRANCH',
+      'JOB_BUILD_STATUS',
+      'EXECUTOR'
+    ];
+    
+    // Handle file upload
+    csvFileInput.addEventListener('change', function(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      uploadStatus.textContent = 'Reading file...';
+      debugSection.classList.remove('hidden');
+      debugInfo.innerHTML = '';
+      
+      logDebug(`File selected: ${file.name} (${formatFileSize(file.size)})`);
+      
+      const reader = new FileReader();
+      
+      reader.onload = function(e) {
+        logDebug(`File loaded successfully. Parsing CSV...`);
+        const csvText = e.target.result;
         
-        setStats(stats);
-      };
-
-      // Handle file upload
-      const handleFileUpload = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        
-        setLoading(true);
-        setError(null);
-        
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const csvText = e.target.result;
-          
+        try {
           Papa.parse(csvText, {
             header: true,
             dynamicTyping: true,
             skipEmptyLines: true,
-            complete: (results) => {
-              console.log("File parsed successfully. Rows:", results.data.length);
+            complete: function(results) {
+              logDebug(`CSV parsed successfully. ${results.data.length} rows found.`);
               
-              if (results.data.length === 0 || !results.meta.fields || results.meta.fields.length === 0) {
-                setError("CSV parsing produced no valid data or headers");
-                setLoading(false);
+              if (results.data.length === 0) {
+                showError("No data found in the CSV file.");
                 return;
               }
               
-              // Clean up data - replace "\\N" with null for better display
-              const cleanData = results.data.map(row => {
-                const cleanRow = {};
-                results.meta.fields.forEach(field => {
-                  cleanRow[field] = row[field] === "\\\\N" ? null : row[field];
-                });
-                return cleanRow;
-              });
-              
-              setData(cleanData);
-              
-              // Set visible columns (prioritize the filter columns if they exist)
-              let initialColumns = [];
-              filterColumns.forEach(col => {
-                if (results.meta.fields.includes(col)) {
-                  initialColumns.push(col);
-                }
-              });
-              
-              // Add JOB_RUN_STARTED_AT if it exists
-              if (results.meta.fields.includes('JOB_RUN_STARTED_AT') && !initialColumns.includes('JOB_RUN_STARTED_AT')) {
-                initialColumns.push('JOB_RUN_STARTED_AT');
+              if (!results.meta.fields || results.meta.fields.length === 0) {
+                showError("No columns found in the CSV file.");
+                return;
               }
               
-              // If we don't have enough columns, add more from the available fields
-              if (initialColumns.length < 10) {
-                results.meta.fields.forEach(field => {
-                  if (!initialColumns.includes(field) && initialColumns.length < 10) {
-                    initialColumns.push(field);
-                  }
-                });
+              // Log column information
+              logDebug(`Columns found (${results.meta.fields.length}): ${results.meta.fields.join(', ')}`);
+              
+              // Check for our required columns
+              const missingColumns = filterColumns.filter(col => !results.meta.fields.includes(col));
+              if (missingColumns.length > 0) {
+                logDebug(`Warning: Some filter columns are missing: ${missingColumns.join(', ')}`);
               }
               
-              setVisibleColumns(initialColumns);
+              if (!results.meta.fields.includes('JOB_RUN_STARTED_AT')) {
+                logDebug(`Warning: JOB_RUN_STARTED_AT column is missing.`);
+              }
               
-              // Generate filter options for the specified columns
-              const options = {};
-              filterColumns.forEach(field => {
-                if (results.meta.fields.includes(field)) {
-                  // Get unique values for this column
-                  const uniqueValues = [...new Set(cleanData.map(item => item[field]))].filter(x => x !== null);
-                  options[field] = uniqueValues.sort();
-                }
-              });
-              setColumnOptions(options);
+              // Store data and columns
+              data = results.data;
+              columns = results.meta.fields;
               
-              // Calculate basic stats
-              calculateStats(cleanData);
+              // Set initial visible columns (all columns)
+              visibleColumns = [...columns];
               
-              setLoading(false);
-              setDataLoaded(true);
+              // Start with all data
+              filteredData = [...data];
+              currentPage = 1;
+              
+              // Show success message
+              uploadStatus.textContent = `Successfully loaded ${data.length} rows of data.`;
+              
+              // Set up date range inputs
+              setupDateRangeInputs();
+              
+              // Setup filters
+              setupFilters();
+              
+              // Setup column selector
+              setupColumnSelector();
+              
+              // Render table
+              renderTable();
+              
+              // Show filter and table sections
+              filterSection.style.display = 'block';
+              tableContainer.classList.remove('hidden');
+              columnSelectorSection.classList.remove('hidden');
             },
-            error: (error) => {
-              console.error("CSV parsing error:", error);
-              setError(`Error parsing CSV: ${error.message}`);
-              setLoading(false);
+            error: function(error) {
+              showError(`Error parsing CSV: ${error.message}`);
             }
           });
-        };
-        
-        reader.onerror = () => {
-          setError("Error reading file");
-          setLoading(false);
-        };
-        
-        reader.readAsText(file);
-      };
-
-      // Filter data based on active filters and date range
-      const filteredData = useMemo(() => {
-        if (Object.keys(activeFilters).length === 0 && !searchTerm && !activeDateRange.startDate && !activeDateRange.endDate) {
-          return data;
-        }
-
-        return data.filter(item => {
-          // Check if the item matches all active filters
-          const matchesFilters = Object.entries(activeFilters).every(([field, value]) => {
-            if (!value || value.length === 0) return true;
-            return value.includes(item[field]);
-          });
-          
-          // Check global search term
-          const matchesSearch = !searchTerm || Object.values(item).some(val => {
-            if (val === null) return false;
-            return String(val).toLowerCase().includes(searchTerm.toLowerCase());
-          });
-          
-          // Check date range for JOB_RUN_STARTED_AT
-          let matchesDateRange = true;
-          if (activeDateRange.startDate || activeDateRange.endDate) {
-            const jobStartDate = item.JOB_RUN_STARTED_AT;
-            
-            if (!jobStartDate) {
-              matchesDateRange = false;
-            } else {
-              const jobDate = new Date(jobStartDate);
-              
-              if (activeDateRange.startDate && activeDateRange.endDate) {
-                const startDate = new Date(activeDateRange.startDate);
-                const endDate = new Date(activeDateRange.endDate);
-                // Set end date to end of day
-                endDate.setHours(23, 59, 59, 999);
-                
-                matchesDateRange = jobDate >= startDate && jobDate <= endDate;
-              } else if (activeDateRange.startDate) {
-                const startDate = new Date(activeDateRange.startDate);
-                matchesDateRange = jobDate >= startDate;
-              } else if (activeDateRange.endDate) {
-                const endDate = new Date(activeDateRange.endDate);
-                // Set end date to end of day
-                endDate.setHours(23, 59, 59, 999);
-                
-                matchesDateRange = jobDate <= endDate;
-              }
-            }
-          }
-          
-          return matchesFilters && matchesSearch && matchesDateRange;
-        });
-      }, [data, activeFilters, searchTerm, activeDateRange]);
-
-      // Sort data
-      const sortedData = useMemo(() => {
-        if (!sortConfig.key) return filteredData;
-        
-        return [...filteredData].sort((a, b) => {
-          const aValue = a[sortConfig.key];
-          const bValue = b[sortConfig.key];
-          
-          // Handle null values in sorting
-          if (aValue === null && bValue === null) return 0;
-          if (aValue === null) return sortConfig.direction === 'asc' ? 1 : -1;
-          if (bValue === null) return sortConfig.direction === 'asc' ? -1 : 1;
-          
-          // Compare based on data type
-          if (typeof aValue === 'number' && typeof bValue === 'number') {
-            return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-          }
-          
-          // Date comparison for date fields
-          if (sortConfig.key.includes('_AT') || sortConfig.key.includes('DATE')) {
-            try {
-              const aDate = new Date(aValue);
-              const bDate = new Date(bValue);
-              if (!isNaN(aDate) && !isNaN(bDate)) {
-                return sortConfig.direction === 'asc' ? aDate - bDate : bDate - aDate;
-              }
-            } catch (e) {
-              // If date parsing fails, fall back to string comparison
-            }
-          }
-          
-          // String comparison
-          const aString = String(aValue).toLowerCase();
-          const bString = String(bValue).toLowerCase();
-          
-          if (sortConfig.direction === 'asc') {
-            return aString.localeCompare(bString);
-          } else {
-            return bString.localeCompare(aString);
-          }
-        });
-      }, [filteredData, sortConfig]);
-
-      // Pagination
-      const paginatedData = useMemo(() => {
-        const startIndex = (currentPage - 1) * rowsPerPage;
-        return sortedData.slice(startIndex, startIndex + rowsPerPage);
-      }, [sortedData, currentPage, rowsPerPage]);
-
-      // Handle sorting
-      const requestSort = (key) => {
-        let direction = 'asc';
-        if (sortConfig.key === key && sortConfig.direction === 'asc') {
-          direction = 'desc';
-        }
-        setSortConfig({ key, direction });
-      };
-
-      // Handle filter changes
-      const handleFilterChange = (field, value) => {
-        setFilters({
-          ...filters,
-          [field]: value ? [value] : []
-        });
-      };
-
-      // Apply filters
-      const applyFilters = () => {
-        setActiveFilters(filters);
-        setActiveDateRange(dateRange);
-        setCurrentPage(1); // Reset to first page when filters change
-      };
-
-      // Reset filters
-      const resetFilters = () => {
-        setFilters({});
-        setActiveFilters({});
-        setDateRange({ startDate: '', endDate: '' });
-        setActiveDateRange({ startDate: '', endDate: '' });
-        setSearchTerm('');
-        setCurrentPage(1);
-      };
-
-      // Toggle column visibility
-      const toggleColumnVisibility = (column) => {
-        if (visibleColumns.includes(column)) {
-          setVisibleColumns(visibleColumns.filter(col => col !== column));
-        } else {
-          setVisibleColumns([...visibleColumns, column]);
+        } catch (err) {
+          showError(`Error processing file: ${err.message}`);
         }
       };
-
-      // Calculate total pages
-      const totalPages = Math.ceil(sortedData.length / rowsPerPage);
-
-      // Format value for display
-      const formatValue = (value, column) => {
-        if (value === null || value === undefined) return "—";
-        
-        // Format dates
-        if (column.includes('DATE') || column.includes('_AT')) {
-          if (typeof value === 'string' && value.includes('-')) {
-            return value;
-          }
-        }
-        
-        // Format numbers
-        if (column.includes('CREDITS') && typeof value === 'number') {
-          return value.toFixed(2);
-        }
-        
-        return String(value);
+      
+      reader.onerror = function() {
+        showError("Failed to read the file.");
       };
-
-      // Get min and max dates for JOB_RUN_STARTED_AT
-      const getDateBoundaries = () => {
-        if (data.length === 0) return { min: '', max: '' };
-        
-        const dateValues = data
-          .map(item => item.JOB_RUN_STARTED_AT)
-          .filter(date => date !== null && date !== undefined);
-        
-        if (dateValues.length === 0) return { min: '', max: '' };
-        
+      
+      reader.readAsText(file);
+    });
+    
+    // Setup date range inputs
+    function setupDateRangeInputs() {
+      // Find all date values for JOB_RUN_STARTED_AT
+      const dateValues = data
+        .map(item => item.JOB_RUN_STARTED_AT)
+        .filter(date => date && date !== '\\N');
+      
+      if (dateValues.length === 0) {
+        logDebug('No valid dates found for JOB_RUN_STARTED_AT');
+        return;
+      }
+      
+      try {
+        // Parse dates and find min/max
         const dateObjects = dateValues.map(d => new Date(d));
         const minDate = new Date(Math.min(...dateObjects));
         const maxDate = new Date(Math.max(...dateObjects));
@@ -350,346 +257,449 @@
           return date.toISOString().split('T')[0];
         };
         
-        return {
-          min: formatDate(minDate),
-          max: formatDate(maxDate)
-        };
-      };
+        const minDateStr = formatDate(minDate);
+        const maxDateStr = formatDate(maxDate);
+        
+        logDebug(`Date range found: ${minDateStr} to ${maxDateStr}`);
+        
+        // Set min/max attributes on date inputs
+        startDateInput.min = minDateStr;
+        startDateInput.max = maxDateStr;
+        endDateInput.min = minDateStr;
+        endDateInput.max = maxDateStr;
+      } catch (err) {
+        logDebug(`Error setting up date range: ${err.message}`);
+      }
+    }
+    
+    // Set up filter controls
+    function setupFilters() {
+      // Clear existing filters
+      filterControls.innerHTML = '';
+      filters = {};
       
-      const dateBoundaries = useMemo(getDateBoundaries, [data]);
-
-      // Show loading state
-      if (loading) {
-        return (
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-              <p className="mt-4 text-lg">Loading data...</p>
-            </div>
-          </div>
-        );
+      // Create filter for each column
+      filterColumns.forEach(column => {
+        if (!columns.includes(column)) return;
+        
+        // Get unique values for this column
+        const uniqueValues = [...new Set(data.map(item => item[column]))].filter(val => val !== null && val !== undefined);
+        
+        // Create filter control div
+        const filterControl = document.createElement('div');
+        filterControl.className = 'mb-2';
+        
+        // Create label
+        const label = document.createElement('label');
+        label.className = 'block text-sm font-medium text-gray-700 mb-1';
+        label.textContent = column;
+        
+        // Create select element
+        const select = document.createElement('select');
+        select.className = 'block w-full p-2 border rounded text-sm';
+        select.id = `filter-${column}`;
+        
+        // Add default "All" option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = 'All';
+        select.appendChild(defaultOption);
+        
+        // Add options for unique values (limit to 1000 options for performance)
+        uniqueValues.slice(0, 1000).sort().forEach(value => {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = String(value).substring(0, 50); // Truncate long values
+          select.appendChild(option);
+        });
+        
+        // Add event listener
+        select.addEventListener('change', function() {
+          filters[column] = this.value;
+        });
+        
+        // Append elements
+        filterControl.appendChild(label);
+        filterControl.appendChild(select);
+        filterControls.appendChild(filterControl);
+      });
+    }
+    
+    // Setup column selector
+    function setupColumnSelector() {
+      columnSelector.innerHTML = '';
+      
+      columns.forEach(column => {
+        const label = document.createElement('label');
+        label.className = 'inline-flex items-center border rounded p-2 text-sm bg-gray-50';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'mr-2';
+        checkbox.checked = visibleColumns.includes(column);
+        checkbox.addEventListener('change', function() {
+          if (this.checked) {
+            visibleColumns.push(column);
+          } else {
+            visibleColumns = visibleColumns.filter(col => col !== column);
+          }
+          renderTable();
+        });
+        
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(column));
+        columnSelector.appendChild(label);
+      });
+    }
+    
+    // Apply filters to data
+    function applyFilters() {
+      // Get date range values
+      dateRange.startDate = startDateInput.value;
+      dateRange.endDate = endDateInput.value;
+      
+      filteredData = data.filter(row => {
+        // Check column filters
+        for (const [column, value] of Object.entries(filters)) {
+          if (value && row[column] != value) {
+            return false;
+          }
+        }
+        
+        // Check date range
+        if (dateRange.startDate || dateRange.endDate) {
+          const rowDate = row.JOB_RUN_STARTED_AT;
+          if (!rowDate || rowDate === '\\N') {
+            return false;
+          }
+          
+          try {
+            const jobDate = new Date(rowDate);
+            
+            if (dateRange.startDate && dateRange.endDate) {
+              const startDate = new Date(dateRange.startDate);
+              const endDate = new Date(dateRange.endDate);
+              // Set end date to end of day
+              endDate.setHours(23, 59, 59, 999);
+              
+              if (jobDate < startDate || jobDate > endDate) {
+                return false;
+              }
+            } else if (dateRange.startDate) {
+              const startDate = new Date(dateRange.startDate);
+              if (jobDate < startDate) {
+                return false;
+              }
+            } else if (dateRange.endDate) {
+              const endDate = new Date(dateRange.endDate);
+              endDate.setHours(23, 59, 59, 999);
+              if (jobDate > endDate) {
+                return false;
+              }
+            }
+          } catch (err) {
+            // If there's an error parsing the date, exclude the row
+            return false;
+          }
+        }
+        
+        return true;
+      });
+      
+      // Reset to first page
+      currentPage = 1;
+      
+      // Update active filters display
+      updateActiveFilters();
+      
+      // Update table
+      renderTable();
+      
+      logDebug(`Filters applied. ${filteredData.length} rows match criteria.`);
+    }
+    
+    // Update active filters display
+    function updateActiveFilters() {
+      activeFilters.innerHTML = '';
+      
+      let hasActiveFilters = false;
+      
+      // Add column filters
+      for (const [column, value] of Object.entries(filters)) {
+        if (!value) continue;
+        
+        hasActiveFilters = true;
+        
+        const filterTag = document.createElement('div');
+        filterTag.className = 'bg-blue-100 text-blue-800 rounded px-2 py-1 text-sm';
+        filterTag.innerHTML = `
+          <span class="font-medium">${column}:</span> ${value}
+          <button class="ml-1 text-blue-600 font-bold">&times;</button>
+        `;
+        
+        // Add clear button functionality
+        filterTag.querySelector('button').addEventListener('click', function() {
+          // Clear the filter
+          filters[column] = '';
+          document.getElementById(`filter-${column}`).value = '';
+          
+          // Reapply filters
+          applyFilters();
+        });
+        
+        activeFilters.appendChild(filterTag);
       }
-
-      // Show file upload prompt if data not loaded
-      if (!dataLoaded) {
-        return (
-          <div className="flex flex-col items-center justify-center space-y-6 p-8 border-2 border-dashed border-gray-300 rounded-lg bg-white">
-            <div className="text-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              <h2 className="mt-2 text-xl font-semibold text-gray-900">Upload your CircleCI data</h2>
-              <p className="mt-1 text-sm text-gray-500">Upload a CSV file to visualize and analyze your data</p>
-            </div>
-            
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileUpload}
-              className="block w-full max-w-xs text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-            />
-            
-            {error && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4 w-full max-w-lg">
-                <strong className="font-bold">Error!</strong>
-                <span className="block sm:inline"> {error}</span>
-              </div>
-            )}
-          </div>
-        );
+      
+      // Add date range filter if active
+      if (dateRange.startDate || dateRange.endDate) {
+        hasActiveFilters = true;
+        
+        const filterTag = document.createElement('div');
+        filterTag.className = 'bg-blue-100 text-blue-800 rounded px-2 py-1 text-sm';
+        
+        let dateText = '';
+        if (dateRange.startDate && dateRange.endDate) {
+          dateText = `${dateRange.startDate} to ${dateRange.endDate}`;
+        } else if (dateRange.startDate) {
+          dateText = `From ${dateRange.startDate}`;
+        } else {
+          dateText = `Until ${dateRange.endDate}`;
+        }
+        
+        filterTag.innerHTML = `
+          <span class="font-medium">JOB_RUN_STARTED_AT:</span> ${dateText}
+          <button class="ml-1 text-blue-600 font-bold">&times;</button>
+        `;
+        
+        // Add clear button functionality
+        filterTag.querySelector('button').addEventListener('click', function() {
+          // Clear the date range
+          dateRange.startDate = '';
+          dateRange.endDate = '';
+          startDateInput.value = '';
+          endDateInput.value = '';
+          
+          // Reapply filters
+          applyFilters();
+        });
+        
+        activeFilters.appendChild(filterTag);
       }
-
-      return (
-        <div className="flex flex-col space-y-6">
-          {/* File upload at the top */}
-          <div className="bg-blue-50 p-4 rounded border border-blue-200">
-            <div className="flex flex-col md:flex-row items-center">
-              <div className="flex-shrink-0 mr-4">
-                <h3 className="font-medium">CSV Data Source:</h3>
-              </div>
-              <div className="flex-grow">
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileUpload}
-                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                />
-              </div>
-            </div>
-          </div>
+      
+      // Show/hide the active filters section
+      if (hasActiveFilters) {
+        activeFiltersSection.classList.remove('hidden');
+      } else {
+        activeFiltersSection.classList.add('hidden');
+      }
+    }
+    
+    // Reset filters
+    function resetFilters() {
+      // Reset column filters
+      filters = {};
+      const filterSelects = filterControls.querySelectorAll('select');
+      filterSelects.forEach(select => {
+        select.value = '';
+      });
+      
+      // Reset date range
+      dateRange = { startDate: '', endDate: '' };
+      startDateInput.value = '';
+      endDateInput.value = '';
+      
+      // Reset to all data
+      filteredData = [...data];
+      currentPage = 1;
+      
+      // Hide active filters section
+      activeFiltersSection.classList.add('hidden');
+      
+      // Update table
+      renderTable();
+      
+      logDebug('All filters reset.');
+    }
+    
+    // Render table with current data
+    function renderTable() {
+      // Clear existing table
+      tableHeader.innerHTML = '';
+      tableBody.innerHTML = '';
+      
+      if (visibleColumns.length === 0) {
+        tableBody.innerHTML = '<tr><td class="p-4 text-center text-gray-500">No columns selected to display</td></tr>';
+        return;
+      }
+      
+      // Add table headers
+      visibleColumns.forEach(column => {
+        const th = document.createElement('th');
+        th.className = 'px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-200';
+        th.textContent = column;
+        th.addEventListener('click', () => sortColumn(column));
+        tableHeader.appendChild(th);
+      });
+      
+      if (filteredData.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.className = 'px-3 py-4 text-center text-gray-500';
+        td.colSpan = visibleColumns.length;
+        td.textContent = 'No data found matching your criteria';
+        tr.appendChild(td);
+        tableBody.appendChild(tr);
+        
+        pagination.textContent = `0 results`;
+        pageInfo.textContent = `Page 0 of 0`;
+        prevPageBtn.disabled = true;
+        nextPageBtn.disabled = true;
+        return;
+      }
+      
+      // Calculate pagination
+      const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+      const startIndex = (currentPage - 1) * rowsPerPage;
+      const endIndex = Math.min(startIndex + rowsPerPage, filteredData.length);
+      const currentRows = filteredData.slice(startIndex, endIndex);
+      
+      // Add table rows
+      currentRows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50';
+        
+        visibleColumns.forEach(column => {
+          const td = document.createElement('td');
+          td.className = 'px-3 py-2 text-sm text-gray-500';
           
-          {/* Stats Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white p-4 rounded shadow">
-              <h3 className="text-sm font-medium text-gray-500">Total Jobs</h3>
-              <p className="text-2xl font-bold">{stats.totalJobs?.toLocaleString() || 0}</p>
-            </div>
-            <div className="bg-white p-4 rounded shadow">
-              <h3 className="text-sm font-medium text-gray-500">Success Rate</h3>
-              <p className="text-2xl font-bold">
-                {stats.totalJobs ? ((stats.successfulJobs / stats.totalJobs) * 100).toFixed(1) : 0}%
-              </p>
-            </div>
-            <div className="bg-white p-4 rounded shadow">
-              <h3 className="text-sm font-medium text-gray-500">Total Credits</h3>
-              <p className="text-2xl font-bold">{stats.totalCredits?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) || 0}</p>
-            </div>
-            <div className="bg-white p-4 rounded shadow">
-              <h3 className="text-sm font-medium text-gray-500">Avg. Runtime (sec)</h3>
-              <p className="text-2xl font-bold">{stats.averageJobRuntime?.toFixed(1) || 'N/A'}</p>
-            </div>
-          </div>
+          // Format special values
+          const value = row[column];
+          if (value === null || value === undefined || value === "\\N") {
+            td.textContent = "—";
+          } else if (typeof value === 'boolean') {
+            td.textContent = value ? 'Yes' : 'No';
+          } else if (column.includes('CREDITS') && typeof value === 'number') {
+            td.textContent = value.toFixed(2);
+          } else {
+            td.textContent = String(value);
+          }
           
-          {/* Active Filters Display */}
-          {(Object.keys(activeFilters).length > 0 || activeDateRange.startDate || activeDateRange.endDate) && (
-            <div className="bg-blue-50 p-4 rounded border border-blue-200">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="font-medium">Active Filters:</h3>
-                <button 
-                  className="text-sm text-red-600 hover:text-red-800"
-                  onClick={resetFilters}
-                >
-                  Clear All Filters
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(activeFilters).map(([field, values]) => 
-                  values && values.length > 0 ? (
-                    <div key={field} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
-                      <span className="font-medium">{field}:</span> {Array.isArray(values) ? values.join(', ') : values}
-                    </div>
-                  ) : null
-                )}
-                
-                {(activeDateRange.startDate || activeDateRange.endDate) && (
-                  <div className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
-                    <span className="font-medium">JOB_RUN_STARTED_AT:</span> 
-                    {activeDateRange.startDate && activeDateRange.endDate 
-                      ? `${activeDateRange.startDate} to ${activeDateRange.endDate}`
-                      : activeDateRange.startDate 
-                        ? `From ${activeDateRange.startDate}` 
-                        : `Until ${activeDateRange.endDate}`
-                    }
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          
-          {/* Filter Panel */}
-          <div className="bg-gray-100 p-4 rounded shadow">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              {/* Date Range Filter for JOB_RUN_STARTED_AT */}
-              <div className="bg-white p-3 rounded border">
-                <h3 className="text-sm font-medium mb-2">JOB_RUN_STARTED_AT Range</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">From Date</label>
-                    <input 
-                      type="date" 
-                      className="w-full p-2 border rounded text-sm"
-                      value={dateRange.startDate}
-                      min={dateBoundaries.min}
-                      max={dateRange.endDate || dateBoundaries.max}
-                      onChange={(e) => setDateRange({...dateRange, startDate: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">To Date</label>
-                    <input 
-                      type="date" 
-                      className="w-full p-2 border rounded text-sm"
-                      value={dateRange.endDate}
-                      min={dateRange.startDate || dateBoundaries.min}
-                      max={dateBoundaries.max}
-                      onChange={(e) => setDateRange({...dateRange, endDate: e.target.value})}
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              {/* Search Field */}
-              <div className="bg-white p-3 rounded border">
-                <h3 className="text-sm font-medium mb-2">Search</h3>
-                <input
-                  type="text"
-                  placeholder="Search all columns..."
-                  className="w-full p-2 border rounded text-sm"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-            </div>
-            
-            {/* Column Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              {filterColumns.map(column => (
-                columnOptions[column] && (
-                  <div key={column} className="bg-white p-3 rounded border">
-                    <label className="block text-sm font-medium mb-2">{column}</label>
-                    <select
-                      className="w-full p-2 border rounded text-sm"
-                      value={filters[column]?.[0] || ''}
-                      onChange={(e) => handleFilterChange(column, e.target.value)}
-                    >
-                      <option value="">All</option>
-                      {columnOptions[column].map(option => (
-                        <option key={option} value={option}>
-                          {option || 'NULL'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )
-              ))}
-            </div>
-            
-            <div className="flex justify-between">
-              <div className="flex items-center">
-                <select 
-                  className="p-2 border rounded mr-2"
-                  value={rowsPerPage}
-                  onChange={(e) => {
-                    setRowsPerPage(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                >
-                  <option value={10}>10 rows</option>
-                  <option value={20}>20 rows</option>
-                  <option value={50}>50 rows</option>
-                  <option value={100}>100 rows</option>
-                </select>
-                <span className="text-sm text-gray-500">rows per page</span>
-              </div>
-              
-              <div className="flex gap-2">
-                <button 
-                  className="p-2 border rounded bg-gray-300"
-                  onClick={resetFilters}
-                >
-                  Reset Filters
-                </button>
-                <button 
-                  className="p-2 border rounded bg-blue-500 text-white"
-                  onClick={applyFilters}
-                >
-                  Apply Filters
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          {/* Column Selector */}
-          <div className="bg-white p-4 rounded shadow">
-            <h3 className="font-medium mb-2">Visible Columns</h3>
-            <div className="flex flex-wrap gap-2">
-              {data.length > 0 && Object.keys(data[0]).map(column => (
-                <label key={column} className="inline-flex items-center p-1 border rounded">
-                  <input
-                    type="checkbox"
-                    checked={visibleColumns.includes(column)}
-                    onChange={() => toggleColumnVisibility(column)}
-                    className="mr-1"
-                  />
-                  <span className="text-sm">{column}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          
-          {/* Data Table */}
-          <div className="overflow-x-auto border rounded shadow">
-            <table className="min-w-full bg-white">
-              <thead className="bg-gray-100">
-                <tr>
-                  {visibleColumns.map(column => (
-                    <th 
-                      key={column}
-                      className="py-2 px-4 border-b text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-200"
-                      onClick={() => requestSort(column)}
-                    >
-                      {column}
-                      {sortConfig.key === column && (
-                        <span className="ml-1">
-                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
-                        </span>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {paginatedData.length > 0 ? (
-                  paginatedData.map((row, rowIndex) => (
-                    <tr key={rowIndex} className="hover:bg-gray-50">
-                      {visibleColumns.map(column => (
-                        <td key={column} className="py-2 px-4 text-sm">
-                          {formatValue(row[column], column)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td 
-                      colSpan={visibleColumns.length} 
-                      className="py-4 px-4 text-center text-gray-500"
-                    >
-                      No data found matching your criteria
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          
-          {/* Pagination */}
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-gray-500">
-              Showing {paginatedData.length > 0 ? (currentPage - 1) * rowsPerPage + 1 : 0} to {Math.min(currentPage * rowsPerPage, sortedData.length)} of {sortedData.length} results
-            </div>
-            <div className="flex space-x-1">
-              <button
-                className="px-3 py-1 border rounded bg-white disabled:opacity-50"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(1)}
-              >
-                &laquo;
-              </button>
-              <button
-                className="px-3 py-1 border rounded bg-white disabled:opacity-50"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              >
-                &lsaquo;
-              </button>
-              
-              <span className="px-3 py-1 border rounded bg-gray-100">
-                {currentPage} / {totalPages || 1}
-              </span>
-              
-              <button
-                className="px-3 py-1 border rounded bg-white disabled:opacity-50"
-                disabled={currentPage === totalPages || totalPages === 0}
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              >
-                &rsaquo;
-              </button>
-              <button
-                className="px-3 py-1 border rounded bg-white disabled:opacity-50"
-                disabled={currentPage === totalPages || totalPages === 0}
-                onClick={() => setCurrentPage(totalPages)}
-              >
-                &raquo;
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    };
-
-    // Render the app
-    ReactDOM.render(<CircleCIDataDashboard />, document.getElementById('app'));
+          tr.appendChild(td);
+        });
+        
+        tableBody.appendChild(tr);
+      });
+      
+      // Update pagination info
+      pagination.textContent = `Showing ${startIndex + 1} to ${endIndex} of ${filteredData.length} results`;
+      pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+      
+      // Update pagination buttons
+      prevPageBtn.disabled = currentPage === 1;
+      nextPageBtn.disabled = currentPage >= totalPages;
+    }
+    
+    // Sort column
+    let currentSort = { column: null, direction: 'asc' };
+    function sortColumn(column) {
+      // Toggle direction if same column
+      if (currentSort.column === column) {
+        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSort.column = column;
+        currentSort.direction = 'asc';
+      }
+      
+      // Sort the data
+      filteredData.sort((a, b) => {
+        const aValue = a[column];
+        const bValue = b[column];
+        
+        // Handle null values
+        if (aValue === null && bValue === null) return 0;
+        if (aValue === null) return currentSort.direction === 'asc' ? -1 : 1;
+        if (bValue === null) return currentSort.direction === 'asc' ? 1 : -1;
+        
+        // Handle date values
+        if (column.includes('DATE') || column.includes('_AT')) {
+          try {
+            const aDate = new Date(aValue);
+            const bDate = new Date(bValue);
+            if (!isNaN(aDate) && !isNaN(bDate)) {
+              return currentSort.direction === 'asc' ? 
+                aDate - bDate : 
+                bDate - aDate;
+            }
+          } catch (err) {
+            // If date parsing fails, fall back to string comparison
+          }
+        }
+        
+        // Handle number values
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          return currentSort.direction === 'asc' ? 
+            aValue - bValue : 
+            bValue - aValue;
+        }
+        
+        // String comparison
+        const aString = String(aValue).toLowerCase();
+        const bString = String(bValue).toLowerCase();
+        return currentSort.direction === 'asc' ? 
+          aString.localeCompare(bString) : 
+          bString.localeCompare(aString);
+      });
+      
+      // Reset to first page
+      currentPage = 1;
+      
+      // Update table
+      renderTable();
+      
+      logDebug(`Sorted by ${column} (${currentSort.direction})`);
+    }
+    
+    // Event listeners for filter buttons
+    resetFilterBtn.addEventListener('click', resetFilters);
+    applyFilterBtn.addEventListener('click', applyFilters);
+    
+    // Event listeners for pagination
+    prevPageBtn.addEventListener('click', function() {
+      if (currentPage > 1) {
+        currentPage--;
+        renderTable();
+      }
+    });
+    
+    nextPageBtn.addEventListener('click', function() {
+      const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderTable();
+      }
+    });
+    
+    // Utility functions
+    function showError(message) {
+      uploadStatus.textContent = `Error: ${message}`;
+      uploadStatus.className = 'text-sm text-red-600 font-medium';
+      logDebug(`ERROR: ${message}`);
+    }
+    
+    function logDebug(message) {
+      const entry = document.createElement('div');
+      entry.className = 'mb-1';
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      debugInfo.appendChild(entry);
+      debugInfo.scrollTop = debugInfo.scrollHeight;
+      console.log(message);
+    }
+    
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' bytes';
+      else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      else return (bytes / 1048576).toFixed(1) + ' MB';
+    }
   </script>
 </body>
 </html>
