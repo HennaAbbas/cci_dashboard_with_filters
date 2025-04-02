@@ -37,6 +37,25 @@
       </div>
     </div>
     
+    <!-- Stats Summary -->
+    <div class="bg-white p-4 rounded shadow mb-6 hidden" id="statsSection">
+      <h2 class="text-lg font-medium mb-3">Summary Statistics</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-blue-50 p-3 rounded border border-blue-100">
+          <h3 class="text-sm font-medium text-gray-600">Total Jobs</h3>
+          <p class="text-2xl font-bold text-blue-800" id="totalJobsCount">0</p>
+        </div>
+        <div class="bg-green-50 p-3 rounded border border-green-100">
+          <h3 class="text-sm font-medium text-gray-600">Success Rate</h3>
+          <p class="text-2xl font-bold text-green-800" id="successRate">0%</p>
+        </div>
+        <div class="bg-purple-50 p-3 rounded border border-purple-100">
+          <h3 class="text-sm font-medium text-gray-600">Total Credits</h3>
+          <p class="text-2xl font-bold text-purple-800" id="totalCredits">0</p>
+        </div>
+      </div>
+    </div>
+    
     <!-- Filters -->
     <div class="bg-white p-4 rounded shadow mb-6" id="filterSection" style="display: none;">
       <h2 class="text-lg font-medium mb-2">Filters</h2>
@@ -121,6 +140,10 @@
     const activeFilters = document.getElementById('activeFilters');
     const columnSelectorSection = document.getElementById('columnSelectorSection');
     const columnSelector = document.getElementById('columnSelector');
+    const statsSection = document.getElementById('statsSection');
+    const totalJobsCount = document.getElementById('totalJobsCount');
+    const successRate = document.getElementById('successRate');
+    const totalCredits = document.getElementById('totalCredits');
     
     // State variables
     let data = [];
@@ -193,6 +216,10 @@
                 logDebug(`Warning: ${dateTimeColumn} column is missing.`);
               }
               
+              if (!results.meta.fields.includes('TOTAL_CREDITS')) {
+                logDebug(`Warning: TOTAL_CREDITS column is missing. Credit summary will not be available.`);
+              }
+              
               // Store data and columns
               data = results.data;
               columns = results.meta.fields;
@@ -216,6 +243,9 @@
               // Setup column selector
               setupColumnSelector();
               
+              // Update stats
+              updateStats(data);
+              
               // Render table
               renderTable();
               
@@ -223,6 +253,7 @@
               filterSection.style.display = 'block';
               tableContainer.classList.remove('hidden');
               columnSelectorSection.classList.remove('hidden');
+              statsSection.classList.remove('hidden');
             },
             error: function(error) {
               showError(`Error parsing CSV: ${error.message}`);
@@ -239,6 +270,40 @@
       
       reader.readAsText(file);
     });
+    
+    // Update statistics
+    function updateStats(dataToUse) {
+      try {
+        // Calculate total jobs
+        const total = dataToUse.length;
+        totalJobsCount.textContent = total.toLocaleString();
+        
+        // Calculate success rate
+        const successfulJobs = dataToUse.filter(job => job.JOB_BUILD_STATUS === 'success').length;
+        const successRateValue = total > 0 ? (successfulJobs / total * 100) : 0;
+        successRate.textContent = successRateValue.toFixed(1) + '%';
+        
+        // Calculate total credits
+        let creditSum = 0;
+        if (columns.includes('TOTAL_CREDITS')) {
+          creditSum = dataToUse.reduce((sum, job) => {
+            const credits = job.TOTAL_CREDITS;
+            if (typeof credits === 'number' && !isNaN(credits)) {
+              return sum + credits;
+            }
+            return sum;
+          }, 0);
+        }
+        totalCredits.textContent = creditSum.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+        
+        logDebug(`Statistics updated: ${total} jobs, ${successRateValue.toFixed(1)}% success rate, ${creditSum.toFixed(2)} total credits`);
+      } catch (err) {
+        logDebug(`Error updating stats: ${err.message}`);
+      }
+    }
     
     // Setup date and time range inputs
     function setupDateTimeRangeInputs() {
@@ -470,6 +535,9 @@
       // Reset to first page
       currentPage = 1;
       
+      // Update statistics for filtered data
+      updateStats(filteredData);
+      
       // Update active filters display
       updateActiveFilters();
       
@@ -589,6 +657,9 @@
       filteredData = [...data];
       currentPage = 1;
       
+      // Update statistics for all data
+      updateStats(data);
+      
       // Hide active filters section
       activeFiltersSection.classList.add('hidden');
       
@@ -704,79 +775,4 @@
           try {
             const aDate = new Date(aValue);
             const bDate = new Date(bValue);
-            if (!isNaN(aDate) && !isNaN(bDate)) {
-              return currentSort.direction === 'asc' ? 
-                aDate - bDate : 
-                bDate - aDate;
-            }
-          } catch (err) {
-            // If date parsing fails, fall back to string comparison
-          }
-        }
-        
-        // Handle number values
-        if (typeof aValue === 'number' && typeof bValue === 'number') {
-          return currentSort.direction === 'asc' ? 
-            aValue - bValue : 
-            bValue - aValue;
-        }
-        
-        // String comparison
-        const aString = String(aValue).toLowerCase();
-        const bString = String(bValue).toLowerCase();
-        return currentSort.direction === 'asc' ? 
-          aString.localeCompare(bString) : 
-          bString.localeCompare(aString);
-      });
-      
-      // Reset to first page
-      currentPage = 1;
-      
-      // Update table
-      renderTable();
-    }
-    
-    // Event listeners for filter buttons
-    resetFilterBtn.addEventListener('click', resetFilters);
-    applyFilterBtn.addEventListener('click', applyFilters);
-    
-    // Event listeners for pagination
-    prevPageBtn.addEventListener('click', function() {
-      if (currentPage > 1) {
-        currentPage--;
-        renderTable();
-      }
-    });
-    
-    nextPageBtn.addEventListener('click', function() {
-      const totalPages = Math.ceil(filteredData.length / rowsPerPage);
-      if (currentPage < totalPages) {
-        currentPage++;
-        renderTable();
-      }
-    });
-    
-    // Utility functions
-    function showError(message) {
-      uploadStatus.textContent = `Error: ${message}`;
-      uploadStatus.className = 'text-sm text-red-600 font-medium';
-      logDebug(`ERROR: ${message}`);
-    }
-    
-    function logDebug(message) {
-      const entry = document.createElement('div');
-      entry.className = 'mb-1';
-      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-      debugInfo.appendChild(entry);
-      debugInfo.scrollTop = debugInfo.scrollHeight;
-      console.log(message);
-    }
-    
-    function formatFileSize(bytes) {
-      if (bytes < 1024) return bytes + ' bytes';
-      else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-      else return (bytes / 1048576).toFixed(1) + ' MB';
-    }
-  </script>
-</body>
-</html>
+            if (!isNaN(aDate) && !
