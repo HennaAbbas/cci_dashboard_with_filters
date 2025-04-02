@@ -41,15 +41,18 @@
     <div class="bg-white p-4 rounded shadow mb-6" id="filterSection" style="display: none;">
       <h2 class="text-lg font-medium mb-2">Filters</h2>
       
-      <!-- Date Range Filter -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 p-3 border rounded">
-        <div>
-          <label class="block text-sm font-medium mb-1">JOB_RUN_STARTED_AT From:</label>
-          <input type="date" id="startDate" class="w-full p-2 border rounded">
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">JOB_RUN_STARTED_AT To:</label>
-          <input type="date" id="endDate" class="w-full p-2 border rounded">
+      <!-- Date and Time Range Filter -->
+      <div class="p-3 border rounded mb-4">
+        <h3 class="text-sm font-medium mb-2">JOB_RUN_STARTED_AT Time Range</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">From Date and Time</label>
+            <input type="datetime-local" id="startDateTime" class="w-full p-2 border rounded">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">To Date and Time</label>
+            <input type="datetime-local" id="endDateTime" class="w-full p-2 border rounded">
+          </div>
         </div>
       </div>
       
@@ -103,8 +106,8 @@
     const debugInfo = document.getElementById('debugInfo');
     const filterSection = document.getElementById('filterSection');
     const filterControls = document.getElementById('filterControls');
-    const startDateInput = document.getElementById('startDate');
-    const endDateInput = document.getElementById('endDate');
+    const startDateTimeInput = document.getElementById('startDateTime');
+    const endDateTimeInput = document.getElementById('endDateTime');
     const tableContainer = document.getElementById('tableContainer');
     const tableHeader = document.getElementById('tableHeader');
     const tableBody = document.getElementById('tableBody');
@@ -126,8 +129,11 @@
     let currentPage = 1;
     let rowsPerPage = 20;
     let filters = {};
-    let dateRange = { startDate: '', endDate: '' };
+    let dateTimeRange = { startDateTime: '', endDateTime: '' };
     let visibleColumns = [];
+    
+    // The date/time column we're filtering on
+    const dateTimeColumn = 'JOB_RUN_STARTED_AT';
     
     // Filter columns we care about
     const filterColumns = [
@@ -183,8 +189,8 @@
                 logDebug(`Warning: Some filter columns are missing: ${missingColumns.join(', ')}`);
               }
               
-              if (!results.meta.fields.includes('JOB_RUN_STARTED_AT')) {
-                logDebug(`Warning: JOB_RUN_STARTED_AT column is missing.`);
+              if (!results.meta.fields.includes(dateTimeColumn)) {
+                logDebug(`Warning: ${dateTimeColumn} column is missing.`);
               }
               
               // Store data and columns
@@ -202,7 +208,7 @@
               uploadStatus.textContent = `Successfully loaded ${data.length} rows of data.`;
               
               // Set up date range inputs
-              setupDateRangeInputs();
+              setupDateTimeRangeInputs();
               
               // Setup filters
               setupFilters();
@@ -234,39 +240,73 @@
       reader.readAsText(file);
     });
     
-    // Setup date range inputs
-    function setupDateRangeInputs() {
-      // Find all date values for JOB_RUN_STARTED_AT
-      const dateValues = data
-        .map(item => item.JOB_RUN_STARTED_AT)
-        .filter(date => date && date !== '\\N');
-      
-      if (dateValues.length === 0) {
-        logDebug('No valid dates found for JOB_RUN_STARTED_AT');
+    // Setup date and time range inputs
+    function setupDateTimeRangeInputs() {
+      // Check if date column exists
+      if (!columns.includes(dateTimeColumn)) {
+        logDebug(`${dateTimeColumn} column not found, disabling date filters`);
         return;
       }
       
+      // Find all date values
+      const dateValues = [];
+      let minTime = Number.MAX_SAFE_INTEGER;
+      let maxTime = Number.MIN_SAFE_INTEGER;
+      
+      // Use a safer approach to find min/max dates
       try {
-        // Parse dates and find min/max
-        const dateObjects = dateValues.map(d => new Date(d));
-        const minDate = new Date(Math.min(...dateObjects));
-        const maxDate = new Date(Math.max(...dateObjects));
+        // Sample only a subset of the data to avoid stack overflow
+        const sampleSize = Math.min(1000, data.length);
+        logDebug(`Sampling ${sampleSize} rows to determine date range`);
         
-        // Format as YYYY-MM-DD for date inputs
-        const formatDate = (date) => {
-          return date.toISOString().split('T')[0];
-        };
+        for (let i = 0; i < sampleSize; i++) {
+          const row = data[i];
+          const dateStr = row[dateTimeColumn];
+          
+          if (dateStr && dateStr !== '\\N') {
+            try {
+              // Parse date string like "2024-11-21 16:19:05.000"
+              const dateObj = new Date(dateStr);
+              if (!isNaN(dateObj.getTime())) {
+                const time = dateObj.getTime();
+                if (time < minTime) minTime = time;
+                if (time > maxTime) maxTime = time;
+              }
+            } catch (e) {
+              // Skip invalid dates
+            }
+          }
+        }
         
-        const minDateStr = formatDate(minDate);
-        const maxDateStr = formatDate(maxDate);
-        
-        logDebug(`Date range found: ${minDateStr} to ${maxDateStr}`);
-        
-        // Set min/max attributes on date inputs
-        startDateInput.min = minDateStr;
-        startDateInput.max = maxDateStr;
-        endDateInput.min = minDateStr;
-        endDateInput.max = maxDateStr;
+        if (minTime !== Number.MAX_SAFE_INTEGER && maxTime !== Number.MIN_SAFE_INTEGER) {
+          const minDate = new Date(minTime);
+          const maxDate = new Date(maxTime);
+          
+          // Format as YYYY-MM-DDTHH:MM:SS for datetime-local inputs
+          const formatDateTime = (date) => {
+            // YYYY-MM-DDTHH:MM:SS
+            return date.toISOString().substring(0, 19);
+          };
+          
+          const minDateStr = formatDateTime(minDate);
+          const maxDateStr = formatDateTime(maxDate);
+          
+          logDebug(`Found date & time range: ${minDateStr} to ${maxDateStr}`);
+          
+          // Set min/max attributes on date inputs
+          startDateTimeInput.min = minDateStr;
+          startDateTimeInput.max = maxDateStr;
+          endDateTimeInput.min = minDateStr;
+          endDateTimeInput.max = maxDateStr;
+          
+          // Show a sample date format for debugging
+          const sampleDate = data.find(row => row[dateTimeColumn] && row[dateTimeColumn] !== '\\N');
+          if (sampleDate) {
+            logDebug(`Sample date format: "${sampleDate[dateTimeColumn]}"`);
+          }
+        } else {
+          logDebug('No valid dates found in sample');
+        }
       } catch (err) {
         logDebug(`Error setting up date range: ${err.message}`);
       }
@@ -283,7 +323,18 @@
         if (!columns.includes(column)) return;
         
         // Get unique values for this column
-        const uniqueValues = [...new Set(data.map(item => item[column]))].filter(val => val !== null && val !== undefined);
+        const valueSet = new Set();
+        
+        // Use a sampling approach to avoid performance issues with large datasets
+        const sampleSize = Math.min(5000, data.length);
+        for (let i = 0; i < sampleSize; i++) {
+          const value = data[i][column];
+          if (value !== null && value !== undefined) {
+            valueSet.add(value);
+          }
+        }
+        
+        const uniqueValues = Array.from(valueSet);
         
         // Create filter control div
         const filterControl = document.createElement('div');
@@ -355,8 +406,16 @@
     // Apply filters to data
     function applyFilters() {
       // Get date range values
-      dateRange.startDate = startDateInput.value;
-      dateRange.endDate = endDateInput.value;
+      dateTimeRange.startDateTime = startDateTimeInput.value;
+      dateTimeRange.endDateTime = endDateTimeInput.value;
+      
+      const hasDateTimeFilter = dateTimeRange.startDateTime || dateTimeRange.endDateTime;
+      
+      logDebug(`Applying filters: ${Object.keys(filters).filter(k => filters[k]).length} column filters, date/time range: ${hasDateTimeFilter ? 'yes' : 'no'}`);
+      
+      if (hasDateTimeFilter) {
+        logDebug(`Date/time range: ${dateTimeRange.startDateTime || '(any start)'} to ${dateTimeRange.endDateTime || '(any end)'}`);
+      }
       
       filteredData = data.filter(row => {
         // Check column filters
@@ -366,38 +425,40 @@
           }
         }
         
-        // Check date range
-        if (dateRange.startDate || dateRange.endDate) {
-          const rowDate = row.JOB_RUN_STARTED_AT;
-          if (!rowDate || rowDate === '\\N') {
+        // Check date and time range
+        if (hasDateTimeFilter && columns.includes(dateTimeColumn)) {
+          const rowDateTime = row[dateTimeColumn];
+          if (!rowDateTime || rowDateTime === '\\N') {
             return false;
           }
           
           try {
-            const jobDate = new Date(rowDate);
+            // Parse date string with format like "2024-11-21 16:19:05.000"
+            const jobDateTime = new Date(rowDateTime);
+            const jobTime = jobDateTime.getTime();
             
-            if (dateRange.startDate && dateRange.endDate) {
-              const startDate = new Date(dateRange.startDate);
-              const endDate = new Date(dateRange.endDate);
-              // Set end date to end of day
-              endDate.setHours(23, 59, 59, 999);
+            if (isNaN(jobTime)) {
+              return false;
+            }
+            
+            if (dateTimeRange.startDateTime && dateTimeRange.endDateTime) {
+              const startDateTime = new Date(dateTimeRange.startDateTime);
+              const endDateTime = new Date(dateTimeRange.endDateTime);
               
-              if (jobDate < startDate || jobDate > endDate) {
-                return false;
-              }
-            } else if (dateRange.startDate) {
-              const startDate = new Date(dateRange.startDate);
-              if (jobDate < startDate) {
-                return false;
-              }
-            } else if (dateRange.endDate) {
-              const endDate = new Date(dateRange.endDate);
-              endDate.setHours(23, 59, 59, 999);
-              if (jobDate > endDate) {
-                return false;
-              }
+              // Extend end date to end of minute for inclusive range
+              endDateTime.setSeconds(59, 999);
+              
+              return jobTime >= startDateTime.getTime() && jobTime <= endDateTime.getTime();
+            } else if (dateTimeRange.startDateTime) {
+              const startDateTime = new Date(dateTimeRange.startDateTime);
+              return jobTime >= startDateTime.getTime();
+            } else if (dateTimeRange.endDateTime) {
+              const endDateTime = new Date(dateTimeRange.endDateTime);
+              endDateTime.setSeconds(59, 999);
+              return jobTime <= endDateTime.getTime();
             }
           } catch (err) {
+            logDebug(`Error comparing date: ${err.message} for value: ${rowDateTime}`);
             // If there's an error parsing the date, exclude the row
             return false;
           }
@@ -451,33 +512,33 @@
       }
       
       // Add date range filter if active
-      if (dateRange.startDate || dateRange.endDate) {
+      if (dateTimeRange.startDateTime || dateTimeRange.endDateTime) {
         hasActiveFilters = true;
         
         const filterTag = document.createElement('div');
         filterTag.className = 'bg-blue-100 text-blue-800 rounded px-2 py-1 text-sm';
         
         let dateText = '';
-        if (dateRange.startDate && dateRange.endDate) {
-          dateText = `${dateRange.startDate} to ${dateRange.endDate}`;
-        } else if (dateRange.startDate) {
-          dateText = `From ${dateRange.startDate}`;
+        if (dateTimeRange.startDateTime && dateTimeRange.endDateTime) {
+          dateText = `${formatDateTimeForDisplay(dateTimeRange.startDateTime)} to ${formatDateTimeForDisplay(dateTimeRange.endDateTime)}`;
+        } else if (dateTimeRange.startDateTime) {
+          dateText = `From ${formatDateTimeForDisplay(dateTimeRange.startDateTime)}`;
         } else {
-          dateText = `Until ${dateRange.endDate}`;
+          dateText = `Until ${formatDateTimeForDisplay(dateTimeRange.endDateTime)}`;
         }
         
         filterTag.innerHTML = `
-          <span class="font-medium">JOB_RUN_STARTED_AT:</span> ${dateText}
+          <span class="font-medium">${dateTimeColumn}:</span> ${dateText}
           <button class="ml-1 text-blue-600 font-bold">&times;</button>
         `;
         
         // Add clear button functionality
         filterTag.querySelector('button').addEventListener('click', function() {
           // Clear the date range
-          dateRange.startDate = '';
-          dateRange.endDate = '';
-          startDateInput.value = '';
-          endDateInput.value = '';
+          dateTimeRange.startDateTime = '';
+          dateTimeRange.endDateTime = '';
+          startDateTimeInput.value = '';
+          endDateTimeInput.value = '';
           
           // Reapply filters
           applyFilters();
@@ -494,6 +555,22 @@
       }
     }
     
+    // Format datetime for display
+    function formatDateTimeForDisplay(isoDateTime) {
+      if (!isoDateTime) return '';
+      
+      const date = new Date(isoDateTime);
+      
+      return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+    }
+    
     // Reset filters
     function resetFilters() {
       // Reset column filters
@@ -504,9 +581,9 @@
       });
       
       // Reset date range
-      dateRange = { startDate: '', endDate: '' };
-      startDateInput.value = '';
-      endDateInput.value = '';
+      dateTimeRange = { startDateTime: '', endDateTime: '' };
+      startDateTimeInput.value = '';
+      endDateTimeInput.value = '';
       
       // Reset to all data
       filteredData = [...data];
@@ -610,6 +687,8 @@
         currentSort.direction = 'asc';
       }
       
+      logDebug(`Sorting by ${column} (${currentSort.direction})`);
+      
       // Sort the data
       filteredData.sort((a, b) => {
         const aValue = a[column];
@@ -655,8 +734,6 @@
       
       // Update table
       renderTable();
-      
-      logDebug(`Sorted by ${column} (${currentSort.direction})`);
     }
     
     // Event listeners for filter buttons
