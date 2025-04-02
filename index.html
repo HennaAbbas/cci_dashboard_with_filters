@@ -41,41 +41,61 @@
       const [searchTerm, setSearchTerm] = useState('');
       const [stats, setStats] = useState({});
       const [dataLoaded, setDataLoaded] = useState(false);
-      const [selectedFilterCategory, setSelectedFilterCategory] = useState('common');
+      const [activeFilterCategory, setActiveFilterCategory] = useState('common');
       const [expandedGroups, setExpandedGroups] = useState({});
       const filterPanelRef = useRef(null);
-
+      
+      // All possible columns for filtering
+      const allColumns = [
+        'ORGANIZATION_ID', 'ORGANIZATION_NAME', 'ORGANIZATION_CREATED_DATE',
+        'PROJECT_ID', 'PROJECT_NAME', 'PROJECT_CREATED_DATE',
+        'LAST_BUILD_FINISHED_AT',
+        'VCS_NAME', 'VCS_URL', 'VCS_BRANCH',
+        'PIPELINE_ID', 'PIPELINE_CREATED_AT', 'PIPELINE_NUMBER', 'IS_UNREGISTERED_USER', 'PIPELINE_TRIGGER_SOURCE', 'PIPELINE_TRIGGER_USER_ID',
+        'WORKFLOW_ID', 'WORKFLOW_NAME', 'WORKFLOW_FIRST_JOB_QUEUED_AT', 'WORKFLOW_FIRST_JOB_STARTED_AT', 'WORKFLOW_STOPPED_AT', 'IS_WORKFLOW_SUCCESSFUL',
+        'JOB_NAME', 'JOB_RUN_NUMBER', 'JOB_ID', 'JOB_RUN_DATE', 'JOB_RUN_QUEUED_AT', 'JOB_RUN_STARTED_AT', 'JOB_RUN_STOPPED_AT', 'JOB_BUILD_STATUS',
+        'RESOURCE_CLASS', 'OPERATING_SYSTEM', 'EXECUTOR', 'PARALLELISM',
+        'JOB_RUN_SECONDS', 'MEDIAN_CPU_UTILIZATION_PCT', 'MAX_CPU_UTILIZATION_PCT', 'MEDIAN_RAM_UTILIZATION_PCT', 'MAX_RAM_UTILIZATION_PCT',
+        'COMPUTE_CREDITS', 'DLC_CREDITS', 'USER_CREDITS', 'STORAGE_CREDITS', 'NETWORK_CREDITS', 'LEASE_CREDITS', 'LEASE_OVERAGE_CREDITS', 'IPRANGES_CREDITS', 'TOTAL_CREDITS'
+      ];
+      
       // Define filter categories
       const filterCategories = {
-        common: ['ORGANIZATION_NAME', 'PROJECT_NAME', 'VCS_NAME', 'VCS_BRANCH', 'JOB_BUILD_STATUS', 'OPERATING_SYSTEM', 'EXECUTOR'],
+        common: ['ORGANIZATION_NAME', 'PROJECT_NAME', 'VCS_NAME', 'VCS_BRANCH', 'JOB_NAME', 'JOB_BUILD_STATUS', 'OPERATING_SYSTEM', 'EXECUTOR'],
         organization: ['ORGANIZATION_ID', 'ORGANIZATION_NAME', 'ORGANIZATION_CREATED_DATE'],
         project: ['PROJECT_ID', 'PROJECT_NAME', 'PROJECT_CREATED_DATE'],
-        vcs: ['VCS_NAME', 'VCS_URL', 'VCS_BRANCH'],
-        pipeline: ['PIPELINE_ID', 'PIPELINE_CREATED_AT', 'PIPELINE_NUMBER', 'IS_UNREGISTERED_USER', 'PIPELINE_TRIGGER_SOURCE', 'PIPELINE_TRIGGER_USER_ID'],
-        workflow: ['WORKFLOW_ID', 'WORKFLOW_NAME', 'WORKFLOW_FIRST_JOB_QUEUED_AT', 'WORKFLOW_FIRST_JOB_STARTED_AT', 'WORKFLOW_STOPPED_AT', 'IS_WORKFLOW_SUCCESSFUL'],
-        job: ['JOB_NAME', 'JOB_RUN_NUMBER', 'JOB_ID', 'JOB_RUN_DATE', 'JOB_RUN_QUEUED_AT', 'JOB_RUN_STARTED_AT', 'JOB_RUN_STOPPED_AT', 'JOB_BUILD_STATUS', 'JOB_RUN_SECONDS'],
-        resources: ['RESOURCE_CLASS', 'OPERATING_SYSTEM', 'EXECUTOR', 'PARALLELISM', 'MEDIAN_CPU_UTILIZATION_PCT', 'MAX_CPU_UTILIZATION_PCT', 'MEDIAN_RAM_UTILIZATION_PCT', 'MAX_RAM_UTILIZATION_PCT'],
-        credits: ['COMPUTE_CREDITS', 'DLC_CREDITS', 'USER_CREDITS', 'STORAGE_CREDITS', 'NETWORK_CREDITS', 'LEASE_CREDITS', 'LEASE_OVERAGE_CREDITS', 'IPRANGES_CREDITS', 'TOTAL_CREDITS'],
-        all: [
-          'ORGANIZATION_ID', 'ORGANIZATION_NAME', 'ORGANIZATION_CREATED_DATE',
-          'PROJECT_ID', 'PROJECT_NAME', 'PROJECT_CREATED_DATE',
-          'LAST_BUILD_FINISHED_AT',
-          'VCS_NAME', 'VCS_URL', 'VCS_BRANCH',
-          'PIPELINE_ID', 'PIPELINE_CREATED_AT', 'PIPELINE_NUMBER', 'IS_UNREGISTERED_USER', 'PIPELINE_TRIGGER_SOURCE', 'PIPELINE_TRIGGER_USER_ID',
-          'WORKFLOW_ID', 'WORKFLOW_NAME', 'WORKFLOW_FIRST_JOB_QUEUED_AT', 'WORKFLOW_FIRST_JOB_STARTED_AT', 'WORKFLOW_STOPPED_AT', 'IS_WORKFLOW_SUCCESSFUL',
-          'JOB_NAME', 'JOB_RUN_NUMBER', 'JOB_ID', 'JOB_RUN_DATE', 'JOB_RUN_QUEUED_AT', 'JOB_RUN_STARTED_AT', 'JOB_RUN_STOPPED_AT', 'JOB_BUILD_STATUS',
-          'RESOURCE_CLASS', 'OPERATING_SYSTEM', 'EXECUTOR', 'PARALLELISM',
-          'JOB_RUN_SECONDS', 'MEDIAN_CPU_UTILIZATION_PCT', 'MAX_CPU_UTILIZATION_PCT', 'MEDIAN_RAM_UTILIZATION_PCT', 'MAX_RAM_UTILIZATION_PCT',
-          'COMPUTE_CREDITS', 'DLC_CREDITS', 'USER_CREDITS', 'STORAGE_CREDITS', 'NETWORK_CREDITS', 'LEASE_CREDITS', 'LEASE_OVERAGE_CREDITS', 'IPRANGES_CREDITS', 'TOTAL_CREDITS'
-        ]
+        vcs: ['VCS_NAME', 'VCS_URL', 'VCS_BRANCH', 'LAST_BUILD_FINISHED_AT'],
+        pipeline: ['PIPELINE_ID', 'PIPELINE_NUMBER', 'PIPELINE_TRIGGER_SOURCE', 'IS_UNREGISTERED_USER'],
+        workflow: ['WORKFLOW_NAME', 'IS_WORKFLOW_SUCCESSFUL'],
+        job: ['JOB_NAME', 'JOB_BUILD_STATUS', 'JOB_RUN_NUMBER'],
+        resources: ['RESOURCE_CLASS', 'OPERATING_SYSTEM', 'EXECUTOR', 'PARALLELISM'],
+        credits: ['COMPUTE_CREDITS', 'TOTAL_CREDITS'],
+        all: allColumns
+      };
+
+      // Group columns into logical categories for the column selector
+      const columnGroups = {
+        "Organization": ["ORGANIZATION_ID", "ORGANIZATION_NAME", "ORGANIZATION_CREATED_DATE"],
+        "Project": ["PROJECT_ID", "PROJECT_NAME", "PROJECT_CREATED_DATE"],
+        "VCS": ["VCS_NAME", "VCS_URL", "VCS_BRANCH", "LAST_BUILD_FINISHED_AT"],
+        "Pipeline": ["PIPELINE_ID", "PIPELINE_CREATED_AT", "PIPELINE_NUMBER", "IS_UNREGISTERED_USER", "PIPELINE_TRIGGER_SOURCE", "PIPELINE_TRIGGER_USER_ID"],
+        "Workflow": ["WORKFLOW_ID", "WORKFLOW_NAME", "WORKFLOW_FIRST_JOB_QUEUED_AT", "WORKFLOW_FIRST_JOB_STARTED_AT", "WORKFLOW_STOPPED_AT", "IS_WORKFLOW_SUCCESSFUL"],
+        "Job": ["JOB_NAME", "JOB_RUN_NUMBER", "JOB_ID", "JOB_RUN_DATE", "JOB_RUN_QUEUED_AT", "JOB_RUN_STARTED_AT", "JOB_RUN_STOPPED_AT", "JOB_BUILD_STATUS"],
+        "Resources": ["RESOURCE_CLASS", "OPERATING_SYSTEM", "EXECUTOR", "PARALLELISM", "JOB_RUN_SECONDS", "MEDIAN_CPU_UTILIZATION_PCT", "MAX_CPU_UTILIZATION_PCT", "MEDIAN_RAM_UTILIZATION_PCT", "MAX_RAM_UTILIZATION_PCT"],
+        "Credits": ["COMPUTE_CREDITS", "DLC_CREDITS", "USER_CREDITS", "STORAGE_CREDITS", "NETWORK_CREDITS", "LEASE_CREDITS", "LEASE_OVERAGE_CREDITS", "IPRANGES_CREDITS", "TOTAL_CREDITS"]
       };
 
       // Get active filter columns based on selected category
       const getActiveFilterColumns = () => {
-        return filterCategories[selectedFilterCategory] || [];
+        // Filter out columns that don't exist in the data
+        if (data.length > 0) {
+          const availableColumns = Object.keys(data[0]);
+          return (filterCategories[activeFilterCategory] || []).filter(col => availableColumns.includes(col));
+        }
+        return filterCategories[activeFilterCategory] || [];
       };
 
-      // Toggle expanded group
+      // Toggle expanded group for column selector
       const toggleExpandedGroup = (groupName) => {
         setExpandedGroups(prev => ({
           ...prev,
@@ -85,18 +105,29 @@
 
       // Calculate statistics from the data
       const calculateStats = (data) => {
-        const stats = {
-          totalJobs: data.length,
-          successfulJobs: data.filter(job => job.JOB_BUILD_STATUS === 'success').length,
-          failedJobs: data.filter(job => job.JOB_BUILD_STATUS === 'failed').length,
-          totalCredits: _.sumBy(data, 'TOTAL_CREDITS'),
-          averageJobRuntime: _.meanBy(
-            data.filter(job => job.JOB_RUN_SECONDS && job.JOB_RUN_SECONDS !== null), 
-            'JOB_RUN_SECONDS'
-          )
-        };
-        
-        setStats(stats);
+        try {
+          const stats = {
+            totalJobs: data.length,
+            successfulJobs: data.filter(job => job.JOB_BUILD_STATUS === 'success').length,
+            failedJobs: data.filter(job => job.JOB_BUILD_STATUS === 'failed').length,
+            totalCredits: _.sumBy(data, 'TOTAL_CREDITS') || 0,
+            averageJobRuntime: _.meanBy(
+              data.filter(job => job.JOB_RUN_SECONDS && job.JOB_RUN_SECONDS !== null), 
+              'JOB_RUN_SECONDS'
+            ) || 0
+          };
+          
+          setStats(stats);
+        } catch (error) {
+          console.error("Error calculating stats:", error);
+          setStats({
+            totalJobs: data.length,
+            successfulJobs: 0,
+            failedJobs: 0,
+            totalCredits: 0,
+            averageJobRuntime: 0
+          });
+        }
       };
 
       // Handle file upload
@@ -135,18 +166,28 @@
               
               setData(cleanData);
               
-              // Set visible columns (first 10 columns by default)
-              setVisibleColumns(results.meta.fields.slice(0, 10));
+              // Set visible columns (prioritize common columns if they exist)
+              const commonVisibleColumns = filterCategories.common.filter(col => 
+                results.meta.fields.includes(col)
+              );
+              
+              setVisibleColumns(commonVisibleColumns.length > 0 
+                ? commonVisibleColumns 
+                : results.meta.fields.slice(0, 10)
+              );
               
               // Generate filter options for each column
               const options = {};
               results.meta.fields.forEach(field => {
-                // Get unique values for this column (limit to 500 for performance)
-                const uniqueValues = [...new Set(cleanData.map(item => item[field]))].filter(x => x !== null);
-                // Sort values, but limit to 500 options to prevent UI overload
-                options[field] = uniqueValues.slice(0, 500).sort();
+                // Get unique values for this column (limit to 100 for performance)
+                const uniqueValues = [...new Set(cleanData.map(item => item[field]))].filter(x => x !== null && x !== undefined);
+                // Sort values and limit to prevent UI overload
+                options[field] = uniqueValues.slice(0, 100).sort();
               });
               setColumnOptions(options);
+              
+              // Expand Organization group by default in column selector
+              setExpandedGroups({Organization: true});
               
               // Calculate basic stats
               calculateStats(cleanData);
@@ -180,12 +221,18 @@
           // Check if the item matches all active filters
           const matchesFilters = Object.entries(activeFilters).every(([field, value]) => {
             if (!value || value.length === 0) return true;
+            
+            // Handle null values
+            if (item[field] === null || item[field] === undefined) {
+              return value.includes(null) || value.includes("null");
+            }
+            
             return value.includes(item[field]);
           });
           
           // Check global search term
           const matchesSearch = !searchTerm || Object.values(item).some(val => {
-            if (val === null) return false;
+            if (val === null || val === undefined) return false;
             return String(val).toLowerCase().includes(searchTerm.toLowerCase());
           });
           
@@ -240,10 +287,10 @@
 
       // Handle filter changes
       const handleFilterChange = (field, value) => {
-        setFilters({
-          ...filters,
-          [field]: value ? [value] : []
-        });
+        setFilters(prev => ({
+          ...prev,
+          [field]: value === "" ? [] : [value]
+        }));
       };
 
       // Apply filters
@@ -318,18 +365,6 @@
         }
         
         return String(value);
-      };
-
-      // Group columns into logical categories
-      const columnGroups = {
-        "Organization": ["ORGANIZATION_ID", "ORGANIZATION_NAME", "ORGANIZATION_CREATED_DATE"],
-        "Project": ["PROJECT_ID", "PROJECT_NAME", "PROJECT_CREATED_DATE"],
-        "VCS": ["VCS_NAME", "VCS_URL", "VCS_BRANCH", "LAST_BUILD_FINISHED_AT"],
-        "Pipeline": ["PIPELINE_ID", "PIPELINE_CREATED_AT", "PIPELINE_NUMBER", "IS_UNREGISTERED_USER", "PIPELINE_TRIGGER_SOURCE", "PIPELINE_TRIGGER_USER_ID"],
-        "Workflow": ["WORKFLOW_ID", "WORKFLOW_NAME", "WORKFLOW_FIRST_JOB_QUEUED_AT", "WORKFLOW_FIRST_JOB_STARTED_AT", "WORKFLOW_STOPPED_AT", "IS_WORKFLOW_SUCCESSFUL"],
-        "Job": ["JOB_NAME", "JOB_RUN_NUMBER", "JOB_ID", "JOB_RUN_DATE", "JOB_RUN_QUEUED_AT", "JOB_RUN_STARTED_AT", "JOB_RUN_STOPPED_AT", "JOB_BUILD_STATUS"],
-        "Resources": ["RESOURCE_CLASS", "OPERATING_SYSTEM", "EXECUTOR", "PARALLELISM", "JOB_RUN_SECONDS", "MEDIAN_CPU_UTILIZATION_PCT", "MAX_CPU_UTILIZATION_PCT", "MEDIAN_RAM_UTILIZATION_PCT", "MAX_RAM_UTILIZATION_PCT"],
-        "Credits": ["COMPUTE_CREDITS", "DLC_CREDITS", "USER_CREDITS", "STORAGE_CREDITS", "NETWORK_CREDITS", "LEASE_CREDITS", "LEASE_OVERAGE_CREDITS", "IPRANGES_CREDITS", "TOTAL_CREDITS"]
       };
 
       // Show loading state
@@ -545,62 +580,53 @@
             <div className="mb-4">
               <div className="flex overflow-x-auto space-x-2 pb-2">
                 <button
-                  className={`px-3 py-1 rounded ${selectedFilterCategory === 'common' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                  onClick={() => setSelectedFilterCategory('common')}
+                  className={`px-3 py-1 rounded ${activeFilterCategory === 'common' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                  onClick={() => setActiveFilterCategory('common')}
                 >
                   Common
                 </button>
                 <button
-                  className={`px-3 py-1 rounded ${selectedFilterCategory === 'organization' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                  onClick={() => setSelectedFilterCategory('organization')}
+                  className={`px-3 py-1 rounded ${activeFilterCategory === 'organization' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                  onClick={() => setActiveFilterCategory('organization')}
                 >
                   Organization
                 </button>
                 <button
-                  className={`px-3 py-1 rounded ${selectedFilterCategory === 'project' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                  onClick={() => setSelectedFilterCategory('project')}
+                  className={`px-3 py-1 rounded ${activeFilterCategory === 'project' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                  onClick={() => setActiveFilterCategory('project')}
                 >
                   Project
                 </button>
                 <button
-                  className={`px-3 py-1 rounded ${selectedFilterCategory === 'vcs' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                  onClick={() => setSelectedFilterCategory('vcs')}
+                  className={`px-3 py-1 rounded ${activeFilterCategory === 'vcs' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                  onClick={() => setActiveFilterCategory('vcs')}
                 >
                   VCS
                 </button>
                 <button
-                  className={`px-3 py-1 rounded ${selectedFilterCategory === 'pipeline' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                  onClick={() => setSelectedFilterCategory('pipeline')}
+                  className={`px-3 py-1 rounded ${activeFilterCategory === 'pipeline' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                  onClick={() => setActiveFilterCategory('pipeline')}
                 >
                   Pipeline
                 </button>
                 <button
-                  className={`px-3 py-1 rounded ${selectedFilterCategory === 'workflow' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                  onClick={() => setSelectedFilterCategory('workflow')}
+                  className={`px-3 py-1 rounded ${activeFilterCategory === 'workflow' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                  onClick={() => setActiveFilterCategory('workflow')}
                 >
                   Workflow
                 </button>
                 <button
-                  className={`px-3 py-1 rounded ${selectedFilterCategory === 'job' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                  onClick={() => setSelectedFilterCategory('job')}
+                  className={`px-3 py-1 rounded ${activeFilterCategory === 'job' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                  onClick={() => setActiveFilterCategory('job')}
                 >
                   Job
                 </button>
                 <button
-                  className={`px-3 py-1 rounded ${selectedFilterCategory === 'resources' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                  onClick={() => setSelectedFilterCategory('resources')}
+                  className={`px-3 py-1 rounded ${activeFilterCategory === 'resources' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                  onClick={() => setActiveFilterCategory('resources')}
                 >
                   Resources
                 </button>
                 <button
-                  className={`px-3 py-1 rounded ${selectedFilterCategory === 'credits' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                  onClick={() => setSelectedFilterCategory('credits')}
-                >
-                  Credits
-                </button>
-                <button
-                  className={`px-3 py-1 rounded ${selectedFilterCategory === 'all' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                  onClick={() => setSelectedFilterCategory('all')}
-                >
-                  All
-                </button
+                  className={`px-3 py-1 rounded ${activeFilterCategory === 'credits' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                  onClick={() => setActiveFilterCategory('credits
